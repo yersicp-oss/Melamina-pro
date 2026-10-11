@@ -7,29 +7,97 @@ from engine import Part,build_parts,optimize,estimate
 from storage import materials,save_catalog,save_quote,quote_history
 from pdf_export import create_pdf
 
-st.set_page_config(page_title='MelaminaPro | Cotizaciones',page_icon='🪚',layout='wide')
-st.markdown('''<style>h1,h2,h3{color:#163657}.block-container{padding-top:1.3rem} @media(max-width:650px){.block-container{padding-left:1rem;padding-right:1rem}}</style>''',unsafe_allow_html=True)
-st.title('🪚 MelaminaPro')
-st.caption('Cotizaciones, despiece y aprovechamiento de tableros | Precios de ejemplo: actualízalos según tus proveedores.')
-page=st.sidebar.radio('Navegación',['Cotizar mueble','Catálogo de materiales','Historial','Información técnica'])
+st.set_page_config(page_title="MelaminaPro | Taller",page_icon="🪚",layout="wide",initial_sidebar_state="collapsed")
+st.markdown("""<style>
+:root{--ink:#142b41;--accent:#eaa343}
+.block-container{max-width:1360px;padding-top:1rem;padding-bottom:3rem}
+h1,h2,h3{color:#18344d;letter-spacing:-.025em}
+[data-testid="stMetric"]{background:#f5f8fc;padding:13px 16px;border-radius:14px;border:1px solid #e6edf5}
+div.stButton > button[kind="primary"]{background:#1c5f8d;border-color:#1c5f8d;border-radius:12px}
+div.stButton button{border-radius:12px;min-height:43px}
+.hero-card{background:linear-gradient(115deg,#143653,#2473a0);padding:26px 28px;border-radius:19px;color:#fff;margin-bottom:15px}
+.hero-card h1{color:#fff;margin:0;font-size:2rem}.hero-card p{color:#dceefa;margin:.45rem 0 0}
+.cat-tile{border:1px solid #d9e6f1;background:#f5f9fd;border-radius:16px;padding:16px;margin:5px 0;min-height:115px}
+.cat-tile h3{font-size:1.05rem;margin:4px 0;color:#193c5a}.cat-tile p{color:#607c91;margin:0;font-size:.81rem}
+.kicker{text-transform:uppercase;letter-spacing:.13em;font-size:.73rem;font-weight:700;color:#2e75a4}
+@media(max-width:700px){.block-container{padding-left:.75rem;padding-right:.75rem}.hero-card{padding:18px}.hero-card h1{font-size:1.55rem}.cat-tile{min-height:95px;padding:10px}}
+</style>""",unsafe_allow_html=True)
+st.markdown('<div class="hero-card"><div class="kicker" style="color:#9fd9f9">TALLER · PRESUPUESTOS</div><h1>🪚 MelaminaPro</h1><p>Cotiza muebles, revisa materiales por tipo y aprovecha mejor tus tableros.</p></div>',unsafe_allow_html=True)
+page=st.segmented_control('Módulos',['🧮 Cotizador','🧱 Materiales','📚 Historial','ℹ️ Ayuda'],default='🧮 Cotizador',label_visibility='collapsed')
+page={'🧮 Cotizador':'Cotizar mueble','🧱 Materiales':'Catálogo de materiales','📚 Historial':'Historial','ℹ️ Ayuda':'Información técnica'}.get(page,'Cotizar mueble')
 rows=materials();pricing={r['name']:r for r in rows}
 
 if page=='Catálogo de materiales':
- st.header('Catálogo de materiales y precios')
- st.info('Los importes son ilustrativos, NO precios verificados de tiendas. Edítalos antes de cotizar.')
- categories=sorted({r['category'] for r in rows})
- cat=st.selectbox('Filtrar por tipo',['Todos']+categories)
- filtered=[r for r in rows if cat=='Todos' or r['category']==cat]
- st.dataframe(pd.DataFrame(filtered).rename(columns={'category':'Categoría','name':'Material','width':'Ancho mm','height':'Largo mm','price':'Precio S/','unit':'Unidad'}),hide_index=True,use_container_width=True)
- st.subheader('Editar catálogo completo')
- edited=st.data_editor(pd.DataFrame(rows),num_rows='dynamic',hide_index=True,use_container_width=True,column_config={'category':st.column_config.SelectboxColumn('Tipo',options=['Tableros','Cantos','Herrajes','Consumibles','Otros'])})
- if st.button('Guardar catálogo',type='primary'):
-  try:save_catalog(edited.fillna({'width':0,'height':0,'price':0,'unit':'unidad'}).to_dict('records'));st.success('Catálogo actualizado');st.rerun()
-  except Exception as e:st.error(str(e))
- st.caption('Puedes agregar nuevos herrajes o tableros; el motor de corte usa los materiales definidos en las piezas.')
+ st.header('Catálogo visual de materiales')
+ st.caption('Precios iniciales de ejemplo en S/. Agrupa por tipo, busca productos y actualiza costos en segundos.')
+ groups={
+  'Tableros':('🪵','Planchas de melamina, MDF y dimensiones'),
+  'Cantos':('〰️','Tapacantos PVC y acabados'),
+  'Herrajes':('🔩','Bisagras, correderas y tiradores'),
+  'Consumibles':('🧰','Tornillos, adhesivos y pequeños insumos'),
+  'Otros':('📦','Productos y servicios adicionales')}
+ categories=list(groups)
+ m1,m2,m3=st.columns(3)
+ m1.metric('Productos registrados',len(rows))
+ m2.metric('Tipos de materiales',len({r['category'] for r in rows}))
+ m3.metric('Tableros disponibles',sum(r['category']=='Tableros' for r in rows))
+ if 'catalog_category' not in st.session_state:st.session_state.catalog_category='Todos'
+ st.markdown('#### Explorar por categoría')
+ columns=st.columns(3)
+ for idx,cat in enumerate(categories):
+  emoji,desc=groups[cat]
+  n=sum(r['category']==cat for r in rows)
+  with columns[idx%3]:
+   st.markdown(f'<div class="cat-tile"><div style="font-size:1.65rem">{emoji}</div><h3>{cat} · {n}</h3><p>{desc}</p></div>',unsafe_allow_html=True)
+   if st.button('Ver '+cat,key='cat_'+cat,use_container_width=True):st.session_state.catalog_category=cat;st.rerun()
+ c1,c2=st.columns([2,1])
+ search=c1.text_input('🔎 Buscar material',placeholder='Ejemplo: Melamina 18, bisagra, PVC...')
+ selected=c2.selectbox('Tipo', ['Todos']+categories,index=(['Todos']+categories).index(st.session_state.catalog_category) if st.session_state.catalog_category in ['Todos']+categories else 0)
+ st.session_state.catalog_category=selected
+ filtered=[r for r in rows if (selected=='Todos' or r['category']==selected) and search.casefold() in r['name'].casefold()]
+ st.markdown(f'#### {selected if selected != "Todos" else "Todos los materiales"} · {len(filtered)} productos')
+ if not filtered:st.info('No se encontraron productos con estos filtros.')
+ for r in filtered:
+  with st.container(border=True):
+   c1,c2,c3=st.columns([3,1.4,1.3],vertical_alignment='center')
+   ico=groups.get(r['category'],('📦',''))[0]
+   c1.markdown(f'**{ico} {r["name"]}**')
+   if r['category']=='Tableros': c1.caption(f'{int(r["width"])} × {int(r["height"])} mm · {r["unit"]}')
+   else:c1.caption(f'{r["category"]} · {r["unit"]}')
+   c2.markdown(f'**S/ {float(r["price"]):,.2f}**')
+   with c3.popover('Editar precio',use_container_width=True):
+    with st.form('price_'+r['name']):
+     price=st.number_input('Nuevo precio S/',min_value=0.0,value=float(r['price']),step=1.0,key='p_'+r['name'])
+     if st.form_submit_button('Guardar',type='primary'):
+      updated=[{**x,'price':price} if x['name']==r['name'] else x for x in rows]
+      save_catalog(updated);st.rerun()
+ with st.expander('➕ Agregar un material nuevo',expanded=False):
+  with st.form('new_material',clear_on_submit=True):
+   n1,n2=st.columns(2)
+   name=n1.text_input('Nombre del producto')
+   category=n2.selectbox('Categoría',categories)
+   n3,n4,n5=st.columns(3)
+   unit=n3.selectbox('Unidad',['plancha','m','unidad','par','lote','kg','otro'])
+   price=n4.number_input('Precio en S/',min_value=0.0,value=0.0,step=1.0)
+   width=n5.number_input('Ancho mm (tableros)',min_value=0,value=0,step=10)
+   height=st.number_input('Largo mm (tableros)',min_value=0,value=0,step=10)
+   if st.form_submit_button('Añadir al catálogo',type='primary'):
+    if not name.strip():st.error('Escribe el nombre del producto.')
+    elif any(x['name'].casefold()==name.strip().casefold() for x in rows):st.error('Ya existe un producto con ese nombre.')
+    elif category=='Tableros' and (width==0 or height==0):st.error('Indica las medidas del tablero.')
+    else:
+     save_catalog(rows+[{'category':category,'name':name.strip(),'width':width,'height':height,'price':price,'unit':unit}]);st.success('Producto añadido');st.rerun()
+ with st.expander('⚙️ Edición masiva del catálogo / eliminar materiales'):
+  st.warning('Los cambios en los precios afectan cotizaciones futuras. Haz una copia antes de eliminar productos usados por tus plantillas.')
+  editor=st.data_editor(pd.DataFrame(rows),num_rows='dynamic',hide_index=True,use_container_width=True,column_config={'category':st.column_config.SelectboxColumn('Tipo',options=categories)})
+  if st.button('Guardar todos los cambios',type='primary'):
+   try:save_catalog(editor.fillna({'width':0,'height':0,'price':0,'unit':'unidad'}).to_dict('records'));st.success('Catálogo actualizado');st.rerun()
+   except Exception as e:st.error(str(e))
+ st.download_button('⬇ Exportar catálogo CSV',pd.DataFrame(rows).to_csv(index=False).encode('utf-8-sig'),'catalogo_melaminapro.csv','text/csv')
 
 elif page=='Cotizar mueble':
  st.header('Nueva cotización')
+ st.caption('Introduce las medidas y revisa los cálculos en tiempo real. El despiece sigue siendo editable.')
  client=st.text_input('Cliente / referencia',placeholder='Nombre del cliente')
  types=['Ropero / clóset','Cocina / gabinete','Escritorio','Repisero','Mueble de TV','Personalizado']
  kind=st.selectbox('Tipo de mueble',types)
@@ -57,7 +125,7 @@ elif page=='Cotizar mueble':
  border=z2.number_input('Margen de seguridad por lado (mm)',0,50,10)
  try:
   parts=build_parts(kind,w,h,d,thickness,doors,drawers,shelves,back)
-  st.subheader('Despiece automático — editable')
+  st.subheader('📐 Despiece automático — editable')
   df=pd.DataFrame([vars(p) for p in parts])
   edited=st.data_editor(df,num_rows='dynamic',hide_index=True,use_container_width=True,column_config={'name':'Pieza','width':'Ancho (mm)','height':'Largo (mm)','qty':'Cantidad','material':st.column_config.SelectboxColumn('Material',options=[r['name'] for r in rows if r['category']=='Tableros']),'edge_ml':'Canto por pieza (m)','grain':'Veta fija'})
   newparts=[]
@@ -72,14 +140,14 @@ elif page=='Cotizar mueble':
    for issue in issues:st.error(issue)
   else:
    calc=estimate(newparts,layout,pricing,labor,transport,consumables,waste,margin,tax)
-   st.subheader('Resultado económico')
+   st.subheader('💰 Resumen de cotización')
    c1,c2,c3=st.columns(3)
    c1.metric('Costo estimado',f'S/ {calc["costo"]:,.2f}')
    c2.metric('Precio de venta',f'S/ {calc["precio_final"]:,.2f}')
    c3.metric('Utilidad bruta estimada',f'S/ {calc["utilidad"]:,.2f}')
    breakdown=pd.DataFrame([{'Concepto':k.replace('_',' ').title(),'S/':round(calc[k],2)} for k in ['tableros','cantos','herrajes','mano_obra','transporte','consumibles','imprevistos','igv']])
    st.dataframe(breakdown,hide_index=True,use_container_width=True)
-   st.subheader('Plan de corte por tablero')
+   st.subheader('🪵 Planos de corte y aprovechamiento')
    for mat,g in layout.items():
     st.markdown(f'**{mat}: {g["qty"]} tablero(s)** — aprovechamiento aproximado {g["efficiency"]:.1%}')
     sw,sh=g['size']
